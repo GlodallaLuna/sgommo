@@ -18,8 +18,32 @@
             <div class="sgm-slide">
                 <img src="https://picsum.photos/1920/1080?random=3" alt="">
             </div>
+            <div class="sgm-slide">
+                <img src="https://picsum.photos/1920/1080?random=4" alt="">
+            </div>
+            <div class="sgm-slide">
+                <img src="https://picsum.photos/1920/1080?random=5" alt="">
+            </div>
+            <div class="sgm-slide">
+                <img src="https://picsum.photos/1920/1080?random=6" alt="">
+            </div>
+            <div class="sgm-slide">
+                <img src="https://picsum.photos/1920/1080?random=7" alt="">
+            </div>
         </div>
     </div>
     
+    <script src="../src/js/index.js"></script>
+    <script>
+        const sgommo = new Sgommo(document.querySelector('.sgm'), {
+            direction: Sgommo.DIRECTION.HORIZONTAL, 
+            speed: 1000, 
+            loop: false, 
+            autoplay: 5000,
+            slidesWidth: [20, 50, "apaiwiwe"],
+        });
+        sgommo.setSlidesWidth([10, 20, 30]);
+        console.log(sgommo);
+    </script>
 </body>
 </html>

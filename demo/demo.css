@@ -41,3 +41,8 @@ body {
   height: 100%;
   object-fit: cover;
 }
+
+.sgm-moving .sgm-slide {
+    pointer-events: none;
+}
+

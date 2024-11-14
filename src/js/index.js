@@ -12,6 +12,8 @@
     spaceBetween: px | percent;
     slidesWidth: int(percent) | array
     ..
+
+    https://jsdoc.app/
 */
 
 class Slide {
@@ -35,6 +37,14 @@ class Slide {
 
     getWidth() {
         return this.#width;
+    }
+
+    getDomRoot() {
+        return this.#domRoot;
+    }
+
+    getPosition() {
+       return this.#domRoot.getBoundingClientRect(); 
     }
 
     updateDomSlide() {
@@ -68,6 +78,11 @@ class Sgommo {
     #slidesWidth = [100];
     #slides = [];
     #debug = false;
+    #isDragging = false;
+    #startX = 0;
+    #prevTranslate = 0;
+    #currentTranslate = 0;
+    #activeSlide = null;
     
     constructor(el, params) {
         this.#setDomRoot(this.#getDOMElement(el));
@@ -84,6 +99,7 @@ class Sgommo {
         
         this.creator();
         this.updateDom();
+        this.#addDragListeners();
     }
     
     setSpeed(speed) {
@@ -115,6 +131,16 @@ class Sgommo {
         this.#domWrapper = this.#domRoot.querySelector(Sgommo.SELECTORS.WRAPPER);
     }
 
+    #setActiveSlide() {
+        let closestSlide = this.#slides[0];
+        this.#slides.forEach((slide) => {
+            /* se ho -1 e 1 ? rimane quella prima */
+            if (Math.abs(slide.getPosition().x) < Math.abs(closestSlide.getPosition().x)) {
+                closestSlide = slide;
+            }
+        });
+        if (this.#activeSlide !== closestSlide) this.#activeSlide = closestSlide;
+    }
 
     #getDOMElement(el) {
         if(typeof el === 'string') {
@@ -124,7 +150,8 @@ class Sgommo {
     }
 
     creator() {
-        this.#createSlides();    
+        this.#createSlides();
+        this.#setActiveSlide();
     }
 
     updateDom() {
@@ -132,10 +159,20 @@ class Sgommo {
             slide.updateDomSlide();
         });
         this.updateDomWrapper();
+        this.updateDomActiveSlide();
     }
 
     updateDomWrapper() {
-        this.#domWrapper.setAttribute('style', `width: ${this.#wrapperWidth}px`)
+        this.#domWrapper.setAttribute('style', `width: ${this.#wrapperWidth}px`);
+    }
+
+    updateDomActiveSlide() {
+        if (this.#activeSlide != null) {
+            this.#slides.forEach((slide) => {
+                slide.getDomRoot().classList.remove('sgm-slide--active');
+            });
+            this.#activeSlide.getDomRoot().classList.add('sgm-slide--active'); 
+        }
     }
 
     #createSlides() {
@@ -148,6 +185,46 @@ class Sgommo {
             /* fare setter e getter di this.#wrapperWidth */
             this.#slides.push(new Slide(slide, index, currentSlideWidth));
         });
+    }
+
+    #addDragListeners() {
+        this.#domWrapper.addEventListener('mousedown', this.#startDrag.bind(this));
+        this.#domWrapper.addEventListener('mousemove', this.#drag.bind(this));
+        this.#domWrapper.addEventListener('mouseup', this.#endDrag.bind(this)); /* problema se rilascio il mouse fuori dallo schermo */
+        /* da fare il touch */
+    }
+
+    #startDrag(event) {
+        this.#isDragging = true;
+        this.#startX = event.type === 'mousedown' ? event.pageX : event.touches[0].clientX;
+        this.#prevTranslate = this.#currentTranslate;
+        this.#domWrapper.classList.add('sgm-moving');
+    }
+
+    #drag(event) {
+        if (!this.#isDragging) return;
+        const currentX = event.type === 'mousemove' ? event.pageX : event.touches[0].clientX;
+        const deltaX = currentX - this.#startX;
+        this.#currentTranslate = this.#prevTranslate + deltaX;
+        this.#setTranslate();
+    }
+
+    #endDrag() {
+        this.#isDragging = false;
+        this.#domWrapper.classList.remove('sgm-moving');
+        this.#setActiveSlide();
+        this.updateDomActiveSlide();
+        this.slideSnap();
+    }
+
+    #setTranslate() {
+        this.#domWrapper.style.transform = `translateX(${this.#currentTranslate}px)`;
+    }
+
+    slideSnap() {
+        this.#currentTranslate = this.#currentTranslate - this.#activeSlide.getPosition().x;
+        this.#setTranslate();
+        console.log(this.#currentTranslate);
     }
 
     log(msg) {

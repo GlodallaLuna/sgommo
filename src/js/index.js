@@ -44,7 +44,7 @@ class Slide {
     }
 
     getPosition() {
-       return this.#domRoot.getBoundingClientRect(); 
+        return this.#domRoot.getBoundingClientRect();
     }
 
     updateDomSlide() {
@@ -56,13 +56,13 @@ class Slide {
 
 class Sgommo {
     static DIRECTION = Object.freeze(
-        { 
-            HORIZONTAL : 'horizontal', 
-            VERTICAL :  'vertical'
+        {
+            HORIZONTAL: 'horizontal',
+            VERTICAL: 'vertical'
         }
     );
     static SELECTORS = Object.freeze(
-        { 
+        {
             WRAPPER: '.sgm-wrapper',
             SLIDE: '.sgm-slide'
         }
@@ -83,7 +83,12 @@ class Sgommo {
     #prevTranslate = 0;
     #currentTranslate = 0;
     #activeSlide = null;
-    
+    #lastSnap = {
+        time: 0,
+        oldTranslate: 0
+    }
+    #isSnapping = false;
+
     constructor(el, params) {
         this.#setDomRoot(this.#getDOMElement(el));
         this.#setDomWrapper();
@@ -96,12 +101,12 @@ class Sgommo {
         this.setLoop(params.loop);
         this.setAutoplay(params.autoplay);
         this.setSlidesWidth(params.slidesWidth);
-        
+
         this.creator();
         this.updateDom();
         this.#addDragListeners();
     }
-    
+
     setSpeed(speed) {
         if (!isNaN(speed)) this.#speed = parseInt(speed);
     }
@@ -142,11 +147,22 @@ class Sgommo {
         if (this.#activeSlide !== closestSlide) this.#activeSlide = closestSlide;
     }
 
+    #setCurrentTranslate(val) {
+        /* arrotondo a 3 cifre decimali */
+        if (!isNaN(val)) this.#currentTranslate = Math.ceil(val * Math.pow(10, 3)) / Math.pow(10, 3);
+    }
+
     #getDOMElement(el) {
-        if(typeof el === 'string') {
+        if (typeof el === 'string') {
             return document.querySelector(el);
         }
         return el
+    }
+
+    #getCurrentTranslate() {
+        const style = window.getComputedStyle(this.#domWrapper);
+        const matrix = new DOMMatrix(style.transform);
+        return matrix.m41;
     }
 
     creator() {
@@ -171,7 +187,7 @@ class Sgommo {
             this.#slides.forEach((slide) => {
                 slide.getDomRoot().classList.remove('sgm-slide--active');
             });
-            this.#activeSlide.getDomRoot().classList.add('sgm-slide--active'); 
+            this.#activeSlide.getDomRoot().classList.add('sgm-slide--active');
         }
     }
 
@@ -179,7 +195,7 @@ class Sgommo {
         let parentWidth = this.#domRoot.offsetWidth;
         this.#wrapperWidth = 0;
         Array.from(this.#domWrapper.children).forEach((slide, index) => {
-            let childWidthPercent = this.#slidesWidth[index % this.#slidesWidth.length];    
+            let childWidthPercent = this.#slidesWidth[index % this.#slidesWidth.length];
             let currentSlideWidth = (parentWidth * childWidthPercent) / 100;
             this.#wrapperWidth += currentSlideWidth;
             /* fare setter e getter di this.#wrapperWidth */
@@ -189,32 +205,45 @@ class Sgommo {
 
     #addDragListeners() {
         this.#domWrapper.addEventListener('mousedown', this.#startDrag.bind(this));
-        this.#domWrapper.addEventListener('mousemove', this.#drag.bind(this));
-        this.#domWrapper.addEventListener('mouseup', this.#endDrag.bind(this)); /* problema se rilascio il mouse fuori dallo schermo */
+        window.addEventListener('mousemove', this.#drag.bind(this));
+        window.addEventListener('mouseup', this.#endDrag.bind(this));
         /* da fare il touch */
     }
 
     #startDrag(event) {
         this.#isDragging = true;
-        this.#startX = event.type === 'mousedown' ? event.pageX : event.touches[0].clientX;
+        this.#startX = event.type === 'mousedown' ? event.clientX : event.touches[0].clientX;
+        /* easing time */
+        const deltaSnapTime = (Math.round(performance.now()) - this.#lastSnap.time);
+        if (deltaSnapTime < this.#speed) {
+            console.log(deltaSnapTime);
+            this.#setCurrentTranslate(this.#lastSnap.oldTranslate + ((this.#currentTranslate - this.#lastSnap.oldTranslate) * (deltaSnapTime / this.#speed)));
+            this.#setTranslate();
+        }
         this.#prevTranslate = this.#currentTranslate;
-        this.#domWrapper.classList.add('sgm-moving');
     }
 
     #drag(event) {
         if (!this.#isDragging) return;
-        const currentX = event.type === 'mousemove' ? event.pageX : event.touches[0].clientX;
+        this.#domWrapper.classList.add('sgm-moving');
+        this.#domWrapper.style.transitionDuration = "0ms";
+        const currentX = event.type === 'mousemove' ? event.clientX : event.touches[0].clientX;
         const deltaX = currentX - this.#startX;
-        this.#currentTranslate = this.#prevTranslate + deltaX;
+        this.#setCurrentTranslate(this.#prevTranslate + deltaX);
         this.#setTranslate();
     }
 
     #endDrag() {
+        if (!this.#isDragging) return;
         this.#isDragging = false;
-        this.#domWrapper.classList.remove('sgm-moving');
         this.#setActiveSlide();
         this.updateDomActiveSlide();
-        this.slideSnap();
+        this.#domWrapper.classList.remove('sgm-moving');
+        this.#lastSnap.oldTranslate = this.#getCurrentTranslate();
+        if (Math.round(this.#activeSlide.getPosition().x) != 0) { /* problema perché qua ho valori tipo 0.00000007 */
+            /* console.log(this.#activeSlide.getPosition().x); */
+            this.slideSnap();
+        }
     }
 
     #setTranslate() {
@@ -222,13 +251,22 @@ class Sgommo {
     }
 
     slideSnap() {
-        this.#currentTranslate = this.#currentTranslate - this.#activeSlide.getPosition().x;
+        this.#isSnapping = true;
+        if (this.#wrapperWidth + this.#currentTranslate > window.innerWidth) {
+            this.#setCurrentTranslate(this.#currentTranslate - this.#activeSlide.getPosition().x);
+        } else {
+            this.#setCurrentTranslate((window.innerWidth - (this.#wrapperWidth + this.#currentTranslate)) + this.#currentTranslate);
+        }
         this.#setTranslate();
-        console.log(this.#currentTranslate);
+        this.#domWrapper.style.transitionDuration = `${this.#speed}ms`;
+        this.#lastSnap.time = Math.round(performance.now());
+        setTimeout(() => {
+            this.#domWrapper.style.transitionDuration = "0ms";
+        }, this.#speed);
+        this.#isSnapping = false;
     }
 
     log(msg) {
         if (this.#debug) console.log(msg);
     }
-
 }

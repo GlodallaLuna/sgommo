@@ -9,8 +9,8 @@
     nextEl: HTMLelement | selector;
     pagination: obj(el: HTMLelement | selector, type: string('bullets' | 'fraction' | 'progressBar?'));
     effect: string('slide' | 'fade' | 'cards');
-    spaceBetween: px | percent;
     slidesWidth: int(percent) | array
+    gap: px | string(percent)
     ..
 
     https://jsdoc.app/
@@ -20,11 +20,13 @@ class Slide {
     #width = 100;
     #index = 0;
     #domRoot = null;
+    #slideGap = 0;
 
-    constructor(element, index, width) {
+    constructor(element, index, width, gap) {
         this.setWidth(width);
         this.setIndex(index);
         this.#domRoot = element;
+        this.setGap(gap);
     }
 
     setIndex(index) {
@@ -33,6 +35,10 @@ class Slide {
 
     setWidth(width) {
         if (!isNaN(width)) this.#width = parseFloat(width);
+    }
+
+    setGap(gap) {
+        this.#slideGap = gap;
     }
 
     getWidth() {
@@ -48,7 +54,8 @@ class Slide {
     }
 
     updateDomSlide() {
-        this.#domRoot.setAttribute('style', `width: ${this.#width}px`);
+        this.#domRoot.style.width = this.#width + "px";
+        this.#domRoot.style.marginRight = this.#slideGap + "px";
     }
 }
 
@@ -71,6 +78,7 @@ class Sgommo {
     #direction = null;
     #loop = true;
     #autoplay = false;
+    #gap = 0;
     #domRoot = null;
     #domWrapper = null;
     #wrapperWidth = 0;
@@ -87,7 +95,6 @@ class Sgommo {
         time: 0,
         oldTranslate: 0
     }
-    #isSnapping = false;
 
     constructor(el, params) {
         this.#setDomRoot(this.#getDOMElement(el));
@@ -101,6 +108,7 @@ class Sgommo {
         this.setLoop(params.loop);
         this.setAutoplay(params.autoplay);
         this.setSlidesWidth(params.slidesWidth);
+        this.setGap(params.gap);
 
         this.creator();
         this.updateDom();
@@ -126,6 +134,18 @@ class Sgommo {
 
     setAutoplay(autoplay) {
         if (!isNaN(autoplay)) this.#autoplay = parseInt(autoplay);
+    }
+
+    setGap(gap) {
+        const regex = /%$/;
+        if (!isNaN(gap)) this.#gap = parseFloat(gap);
+        else if (typeof gap === "string" && regex.test(gap)) {
+            this.#gap = this.percToVal(gap, this.#domRoot.offsetWidth);
+        }
+    }
+
+    percToVal(perc, tot) {
+        return tot * parseInt(perc.replace('%', '')) / 100;
     }
 
     #setDomRoot(root) {
@@ -193,14 +213,48 @@ class Sgommo {
 
     #createSlides() {
         let parentWidth = this.#domRoot.offsetWidth;
+        /* fare setter e getter di this.#wrapperWidth */
         this.#wrapperWidth = 0;
         Array.from(this.#domWrapper.children).forEach((slide, index) => {
             let childWidthPercent = this.#slidesWidth[index % this.#slidesWidth.length];
-            let currentSlideWidth = (parentWidth * childWidthPercent) / 100;
-            this.#wrapperWidth += currentSlideWidth;
-            /* fare setter e getter di this.#wrapperWidth */
-            this.#slides.push(new Slide(slide, index, currentSlideWidth));
+            /* let currentSlideWidth = (parentWidth * childWidthPercent) / 100; */
+            var slideWidth = 0;
+            if (this.#slidesWidth.length === 1) { /* se mettono 50, 50 si rompe */
+                slideWidth = (parentWidth - ((Math.round(100 / this.#slidesWidth) - 1) * this.#gap)) / Math.round(100 / this.#slidesWidth);
+            } else {
+                slideWidth = ((childWidthPercent * parentWidth) / 100) - ((childWidthPercent * (this.#gap * (this.#slidesWidth.length - 1)) / 100));
+            }
+            if (index === this.#domWrapper.children.length - 1) {
+                this.#slides.push(new Slide(slide, index, slideWidth, 0));
+            } else {
+                this.#slides.push(new Slide(slide, index, slideWidth, this.#gap));
+            }
+            this.#wrapperWidth += slideWidth;
         });
+        this.#wrapperWidth += this.#gap * (this.#slides.length - 1);
+    }
+
+    #ease(t) {
+        const x1 = 0.25, y1 = 0.1, x2 = 0.25, y2 = 1;
+
+        function cubicBezier(t, x1, y1, x2, y2) {
+            const epsilon = 1e-5; // Precisione
+            let t0 = 0, t1 = 1, tMid, xMid;
+
+            while (t0 < t1) {
+                tMid = (t0 + t1) / 2;
+                xMid = (1 - tMid) ** 3 * 0 + 3 * (1 - tMid) ** 2 * tMid * x1 + 3 * (1 - tMid) * tMid ** 2 * x2 + tMid ** 3 * 1;
+
+                if (Math.abs(xMid - t) < epsilon) break;
+                if (xMid < t) t0 = tMid;
+                else t1 = tMid;
+            }
+
+            const yMid = (1 - tMid) ** 3 * 0 + 3 * (1 - tMid) ** 2 * tMid * y1 + 3 * (1 - tMid) * tMid ** 2 * y2 + tMid ** 3 * 1;
+            return yMid;
+        }
+
+        return cubicBezier(t, x1, y1, x2, y2);
     }
 
     #addDragListeners() {
@@ -213,11 +267,10 @@ class Sgommo {
     #startDrag(event) {
         this.#isDragging = true;
         this.#startX = event.type === 'mousedown' ? event.clientX : event.touches[0].clientX;
-        /* easing time */
-        const deltaSnapTime = (Math.round(performance.now()) - this.#lastSnap.time);
+        const deltaSnapTime = ((new Date).getTime() - this.#lastSnap.time);
         if (deltaSnapTime < this.#speed) {
-            console.log(deltaSnapTime);
-            this.#setCurrentTranslate(this.#lastSnap.oldTranslate + ((this.#currentTranslate - this.#lastSnap.oldTranslate) * (deltaSnapTime / this.#speed)));
+            const progress = this.#ease(deltaSnapTime / this.#speed);
+            this.#setCurrentTranslate(this.#lastSnap.oldTranslate + ((this.#currentTranslate - this.#lastSnap.oldTranslate) * progress));
             this.#setTranslate();
         }
         this.#prevTranslate = this.#currentTranslate;
@@ -240,8 +293,8 @@ class Sgommo {
         this.updateDomActiveSlide();
         this.#domWrapper.classList.remove('sgm-moving');
         this.#lastSnap.oldTranslate = this.#getCurrentTranslate();
-        if (Math.round(this.#activeSlide.getPosition().x) != 0) { /* problema perché qua ho valori tipo 0.00000007 */
-            /* console.log(this.#activeSlide.getPosition().x); */
+        if (this.#activeSlide.getPosition().x != 0) { /* problema perché qua ho valori tipo 0.00000007 ed entra dentro */
+            console.log(this.#activeSlide.getPosition().x);
             this.slideSnap();
         }
     }
@@ -251,7 +304,6 @@ class Sgommo {
     }
 
     slideSnap() {
-        this.#isSnapping = true;
         if (this.#wrapperWidth + this.#currentTranslate > window.innerWidth) {
             this.#setCurrentTranslate(this.#currentTranslate - this.#activeSlide.getPosition().x);
         } else {
@@ -259,11 +311,10 @@ class Sgommo {
         }
         this.#setTranslate();
         this.#domWrapper.style.transitionDuration = `${this.#speed}ms`;
-        this.#lastSnap.time = Math.round(performance.now());
+        this.#lastSnap.time = (new Date).getTime();
         setTimeout(() => {
             this.#domWrapper.style.transitionDuration = "0ms";
         }, this.#speed);
-        this.#isSnapping = false;
     }
 
     log(msg) {
